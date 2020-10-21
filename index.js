@@ -18,74 +18,58 @@ class OnlineFriends extends Plugin {
     this.loadCSS(require('path').resolve(__dirname, 'style.css'));
     this.utils = require('./core/utils')(this);
     this.classes = {
-      ...await getModule([ 'wrapper', 'unreadMentionsBar' ]),
       ...await getModule([ 'guildSeparator', 'listItem' ])
     };
 
     await this._importStores();
-    this._patchGuildsComponent();
+    this._patchHomeComponent();
   }
 
   pluginWillUnload () {
     uninject('onlineFriends-FriendCount');
 
-    const scroller = getOwnerInstance(document.querySelector(`.${this.classes.guildSeparator}`));
-    const guildSeparator = scroller.props.children.find(child => child._oldType);
-    if (guildSeparator) {
-      guildSeparator.type = guildSeparator._oldType;
-
-      delete guildSeparator._oldType;
-    }
-
-    forceUpdateElement(`.${this.classes.wrapper.split(' ')[0]}`);
+    if (this.homeBtn) this.homeBtn.forceUpdate();
   }
 
-  async _patchGuildsComponent () {
+  async _patchHomeComponent () {
     const FriendsOnline = Flux.connectStores(
       [ constants.StatusStore ],
       () => ({ friendCount: constants.StatusStore.getOnlineFriendCount() })
     )(this._renderFriendsCount.bind(this));
+    const _this = this;
 
-    const instance = getOwnerInstance(await waitFor(`.${this.classes.wrapper.split(' ')[0]}`));
-    inject('onlineFriends-FriendCount', instance.__proto__, 'render', (_, res) => {
-      const scroller = res.props.children.find(child => child.props && child.props.className && child.props.className.includes('scroller'));
-      const connectedUnreadDMs = scroller.props.children.find(child => child.type && child.type.displayName === 'ConnectedUnreadDMs');
-
-      if (connectedUnreadDMs) {
-        const { children } = scroller.props;
-        const types = {
-          1: 'FRIEND',
-          2: 'PENDING_INCOMING',
-          3: 'BLOCKED'
-        };
-
-        const ExtendedCount = Flux.connectStores(
-          [ this.state.type !== 4 ? constants.RelationshipStore : constants.GuildStore ], () => ({
-            extendedCount: types[this.state.type] ? this.utils.relationshipCounts[types[this.state.type]] : this.utils.guildCount
-          })
-        )(this._renderExtendedCount.bind(this));
-
-        const guildSeparator = children[children.indexOf(connectedUnreadDMs) + 2];
-        if (!guildSeparator._oldType) {
-          guildSeparator._oldType = guildSeparator.type;
-        }
-
-        guildSeparator.type = () =>
-          React.createElement('div', {
-            className: this.classes.listItem
-          }, this.state.type > 0
-            ? React.createElement(ExtendedCount)
-            : React.createElement(FriendsOnline),
-          React.createElement('div', {
-            className: this.classes.guildSeparator,
-            style: { marginTop: '20px' }
-          }));
+    const { DefaultHomeButton } = await getModule([ 'DefaultHomeButton' ]);
+    inject('onlineFriends-FriendCount', DefaultHomeButton.prototype, 'render', function (_, res) {
+      if (!Array.isArray(res)) {
+        res = [ res ];
+        res.props = res[0].props;
       }
 
+      const types = {
+        1: 'FRIEND',
+        2: 'PENDING_INCOMING',
+        3: 'BLOCKED'
+      };
+
+      const ExtendedCount = Flux.connectStores(
+        [ _this.state.type !== 4 ? constants.RelationshipStore : constants.GuildStore ], () => ({
+          extendedCount: types[_this.state.type] ? _this.utils.relationshipCounts[types[_this.state.type]] : _this.utils.guildCount
+        })
+      )(_this._renderExtendedCount.bind(_this));
+      _this.homeBtn = this;
+
+      res.push(
+        React.createElement('div', {
+          className: _this.classes.listItem
+        }, _this.state.type > 0
+          ? React.createElement(ExtendedCount)
+          : React.createElement(FriendsOnline),
+        React.createElement('div', {
+          style: { marginTop: '10px' }
+        }))
+      );
       return res;
     });
-
-    instance.forceUpdate();
   }
 
   _onClickHandler () {
@@ -101,7 +85,7 @@ class OnlineFriends extends Plugin {
       }, 100);
     }
 
-    forceUpdateElement(`.${this.classes.wrapper.split(' ')[0]}`);
+    if (this.homeBtn) this.homeBtn.forceUpdate();
   }
 
   _onContextMenuHandler (e) {
